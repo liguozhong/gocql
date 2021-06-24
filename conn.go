@@ -10,6 +10,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/opentracing/opentracing-go"
+	traceLog "github.com/opentracing/opentracing-go/log"
 	"io"
 	"io/ioutil"
 	"net"
@@ -856,6 +858,10 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 }
 
 func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*framer, error) {
+	span, cCtx := opentracing.StartSpanFromContext(ctx, "Conn.executeQuery")
+	defer span.Finish()
+	span.LogFields(traceLog.String("req", req.String()))
+
 	// TODO: move tracer onto conn
 	stream, ok := c.streams.GetStream()
 	if !ok {
@@ -887,6 +893,8 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		framer.trace()
 	}
 
+	spanFrame, _ := opentracing.StartSpanFromContext(cCtx, "req.writeFrame")
+	defer spanFrame.Finish()
 	err := req.writeFrame(framer, stream)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
@@ -978,6 +986,10 @@ type inflightPrepare struct {
 }
 
 func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "Conn.prepareStatement")
+	defer span.Finish()
+	span.LogFields(traceLog.String("stmt", stmt))
+
 	stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := &inflightPrepare{
@@ -1073,6 +1085,10 @@ func marshalQueryValue(typ TypeInfo, value interface{}, dst *queryValues) error 
 }
 
 func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
+	span, ctxSpan := opentracing.StartSpanFromContext(ctx, "Conn.executeQuery")
+	defer span.Finish()
+	span.LogFields(traceLog.String("qry", qry.String()))
+
 	params := queryParams{
 		consistency: qry.cons,
 	}
@@ -1100,7 +1116,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	if !qry.skipPrepare && qry.shouldPrepare() {
 		// Prepare all DML queries. Other queries can not be prepared.
 		var err error
-		info, err = c.prepareStatement(ctx, qry.stmt, qry.trace)
+		info, err = c.prepareStatement(ctxSpan, qry.stmt, qry.trace)
 		if err != nil {
 			return &Iter{err: err}
 		}
@@ -1148,7 +1164,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		}
 	}
 
-	framer, err := c.exec(ctx, frame, qry.trace)
+	framer, err := c.exec(ctxSpan, frame, qry.trace)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -1200,7 +1216,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		return &Iter{framer: framer}
 	case *schemaChangeKeyspace, *schemaChangeTable, *schemaChangeFunction, *schemaChangeAggregate, *schemaChangeType:
 		iter := &Iter{framer: framer}
-		if err := c.awaitSchemaAgreement(ctx); err != nil {
+		if err := c.awaitSchemaAgreement(ctxSpan); err != nil {
 			level.Warn(c.logger).Log("msg", "failed to reach scheme agreement", "error", err)
 		}
 		// dont return an error from this, might be a good idea to give a warning
@@ -1210,7 +1226,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 	case *RequestErrUnprepared:
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
 		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
-		return c.executeQuery(ctx, qry)
+		spanR, _ := opentracing.StartSpanFromContext(ctx, "Conn.RequestErrUnprepared")
+		defer spanR.Finish()
+		return c.executeQuery(ctxSpan, qry)
 	case error:
 		return &Iter{err: x, framer: framer}
 	default:
@@ -1268,6 +1286,10 @@ func (c *Conn) UseKeyspace(keyspace string) error {
 }
 
 func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
+	span, ctx := opentracing.StartSpanFromContext(ctx, "queryExecutor.executeBatch")
+	defer span.Finish()
+	span.LogFields(traceLog.String("keyspace", batch.keyspace))
+
 	if c.version == protoVersion1 {
 		return &Iter{err: ErrUnsupported}
 	}
@@ -1369,6 +1391,10 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 }
 
 func (c *Conn) query(ctx context.Context, statement string, values ...interface{}) (iter *Iter) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "Conn.queryOne")
+	defer span.Finish()
+	span.LogFields(traceLog.String("statement", statement))
+
 	q := c.session.Query(statement, values...).Consistency(One)
 	q.trace = nil
 	q.skipPrepare = true
@@ -1377,6 +1403,10 @@ func (c *Conn) query(ctx context.Context, statement string, values ...interface{
 }
 
 func (c *Conn) awaitSchemaAgreement(ctx context.Context) (err error) {
+	span, _ := opentracing.StartSpanFromContext(ctx, "Conn.awaitSchemaAgreement")
+	defer span.Finish()
+	//span.LogFields(traceLog.String("qry", qry.String()))
+
 	const (
 		peerSchemas  = "SELECT * FROM system.peers"
 		localSchemas = "SELECT schema_version FROM system.local WHERE key='local'"

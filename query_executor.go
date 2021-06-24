@@ -2,6 +2,8 @@ package gocql
 
 import (
 	"context"
+	"github.com/opentracing/opentracing-go"
+	traceLog "github.com/opentracing/opentracing-go/log"
 	"time"
 )
 
@@ -25,8 +27,11 @@ type queryExecutor struct {
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
+	span, ctxAq := opentracing.StartSpanFromContext(ctx, "queryExecutor.attemptQuery")
+	defer span.Finish()
+	span.LogFields(traceLog.String("keyspace", qry.Keyspace()))
 	start := time.Now()
-	iter := qry.execute(ctx, conn)
+	iter := qry.execute(ctxAq, conn)
 	end := time.Now()
 
 	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
@@ -52,7 +57,7 @@ func (q *queryExecutor) speculate(ctx context.Context, qry ExecutableQuery, sp S
 	return nil
 }
 
-func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
+func (q *queryExecutor) executeQuery(ctx context.Context, qry ExecutableQuery) (*Iter, error) {
 	// check if the query is not marked as idempotent, if
 	// it is, we force the policy to NonSpeculative
 	sp := qry.speculativeExecutionPolicy()
@@ -60,18 +65,18 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 		return q.do(qry.Context(), qry), nil
 	}
 
-	ctx, cancel := context.WithCancel(qry.Context())
+	ctxTimeout, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	results := make(chan *Iter, 1)
 
 	// Launch the main execution
-	go q.run(ctx, qry, results)
+	go q.run(ctxTimeout, qry, results)
 
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
 	// in total.
-	if iter := q.speculate(ctx, qry, sp, results); iter != nil {
+	if iter := q.speculate(ctxTimeout, qry, sp, results); iter != nil {
 		return iter, nil
 	}
 
@@ -84,6 +89,10 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery) (*Iter, error) {
 }
 
 func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
+	span, ctxDo := opentracing.StartSpanFromContext(ctx, "queryExecutor.do")
+	defer span.Finish()
+	span.LogFields(traceLog.String("keyspace", qry.Keyspace()))
+
 	hostIter := q.policy.Pick(qry)
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
@@ -109,7 +118,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery) *Iter {
 			continue
 		}
 
-		iter = q.attemptQuery(ctx, qry, conn)
+		iter = q.attemptQuery(ctxDo, qry, conn)
 		iter.host = selectedHost.Info()
 		// Update host
 		switch iter.err {

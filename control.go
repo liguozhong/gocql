@@ -5,6 +5,8 @@ import (
 	crand "crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/opentracing/opentracing-go"
+	traceLog "github.com/opentracing/opentracing-go/log"
 	"math/rand"
 	"net"
 	"os"
@@ -457,11 +459,14 @@ func (c *controlConn) withConn(fn func(*Conn) *Iter) *Iter {
 
 // query will return nil if the connection is closed or nil
 func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter) {
+	span ,ctx :=opentracing.StartSpanFromContext(context.Background(),"controlConn.query")
+	defer span.Finish()
+	span.LogFields(traceLog.String("statement", statement))
 	q := c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil)
 
 	for {
 		iter = c.withConn(func(conn *Conn) *Iter {
-			return conn.executeQuery(context.TODO(), q)
+			return conn.executeQuery(ctx, q)
 		})
 
 		if gocqlDebug && iter.err != nil {

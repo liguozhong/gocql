@@ -841,6 +841,10 @@ type writePrepareFrame struct {
 	customPayload map[string][]byte
 }
 
+func (w *writePrepareFrame) String() string {
+	return "writePrepareFrame"
+}
+
 func (w *writePrepareFrame) writeFrame(f *framer, streamID int) error {
 	if len(w.customPayload) > 0 {
 		f.payload()
@@ -1585,6 +1589,7 @@ func (f *framer) writeQueryFrame(streamID int, statement string, params *queryPa
 
 type frameWriter interface {
 	writeFrame(framer *framer, streamID int) error
+	String() string
 }
 
 type frameWriterFunc func(framer *framer, streamID int) error
@@ -1654,6 +1659,10 @@ type writeBatchFrame struct {
 
 	//v4+
 	customPayload map[string][]byte
+}
+
+func (w *writeBatchFrame) String() string {
+	return "writeBatchFrame"
 }
 
 func (w *writeBatchFrame) writeFrame(framer *framer, streamID int) error {
@@ -1743,6 +1752,10 @@ func (w *writeOptionsFrame) writeFrame(framer *framer, streamID int) error {
 	return framer.writeOptionsFrame(streamID, w)
 }
 
+func (w *writeOptionsFrame) String() string {
+	return "writeOptionsFrame"
+}
+
 func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
 	f.writeHeader(f.flags&^flagCompress, opOptions, stream)
 	return f.finishWrite()
@@ -1754,6 +1767,10 @@ type writeRegisterFrame struct {
 
 func (w *writeRegisterFrame) writeFrame(framer *framer, streamID int) error {
 	return framer.writeRegisterFrame(streamID, w)
+}
+
+func (w *writeRegisterFrame) String() string {
+	return "writeRegisterFrame"
 }
 
 func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {

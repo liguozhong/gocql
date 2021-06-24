@@ -10,6 +10,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/opentracing/opentracing-go"
+	traceLog "github.com/opentracing/opentracing-go/log"
 	"io"
 	"net"
 	"strings"
@@ -382,6 +384,10 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
+	span, _ := opentracing.StartSpanFromContext(context.Background(), "Session.Query")
+	defer span.Finish()
+	span.LogFields(traceLog.String("stmt", stmt))
+
 	qry := queryPool.Get().(*Query)
 	qry.session = s
 	qry.stmt = stmt
@@ -453,11 +459,15 @@ func (s *Session) Closed() bool {
 
 func (s *Session) executeQuery(qry *Query) (it *Iter) {
 	// fail fast
+	span, ctx := opentracing.StartSpanFromContext(qry.Context(), "Session.executeQuery")
+	defer span.Finish()
+	span.LogFields(traceLog.String("qry", qry.String()))
+
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
 	}
 
-	iter, err := s.executor.executeQuery(qry)
+	iter, err := s.executor.executeQuery(ctx, qry)
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -641,6 +651,10 @@ func (b *Batch) execute(ctx context.Context, conn *Conn) *Iter {
 }
 
 func (s *Session) executeBatch(batch *Batch) *Iter {
+	span, ctx := opentracing.StartSpanFromContext(batch.Context(), "Session.executeBatch")
+	defer span.Finish()
+	span.LogFields(traceLog.String("keyspace", batch.Keyspace()))
+
 	// fail fast
 	if s.Closed() {
 		return &Iter{err: ErrSessionClosed}
@@ -653,7 +667,7 @@ func (s *Session) executeBatch(batch *Batch) *Iter {
 		return &Iter{err: ErrTooManyStmts}
 	}
 
-	iter, err := s.executor.executeQuery(batch)
+	iter, err := s.executor.executeQuery(ctx, batch)
 	if err != nil {
 		return &Iter{err: err}
 	}

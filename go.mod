@@ -8,6 +8,8 @@ require (
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 	github.com/prometheus/client_golang v1.6.1-0.20200604110148-03575cad4e55
 	gopkg.in/inf.v0 v0.9.1
+		github.com/opentracing/opentracing-go v1.2.0
+
 )
 
 go 1.13
