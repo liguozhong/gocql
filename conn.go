@@ -564,6 +564,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 	var failures int
 
 	for {
+
 		if failures > 5 {
 			c.closeWithError(fmt.Errorf("gocql: heartbeat failed, err: %v", err))
 			return
@@ -577,9 +578,10 @@ func (c *Conn) heartBeat(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-
+		span, _ := opentracing.StartSpanFromContext(context.Background(), "Conn.heartBeat")
 		var framer *framer
 		framer, err = c.exec(context.Background(), &writeOptionsFrame{}, nil)
+		span.Finish()
 		if err != nil {
 			level.Debug(c.logger).Log("msg", "error execing heartbeat", "error", err)
 			failures++

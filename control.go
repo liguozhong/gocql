@@ -81,7 +81,9 @@ func (c *controlConn) heartBeat() {
 		case <-timer.C:
 		}
 
+		span, _ := opentracing.StartSpanFromContext(context.Background(), "controlConn.heartBeat")
 		resp, err := c.writeFrame(&writeOptionsFrame{})
+		span.Finish()
 		if err != nil {
 			goto reconn
 		}
@@ -459,7 +461,7 @@ func (c *controlConn) withConn(fn func(*Conn) *Iter) *Iter {
 
 // query will return nil if the connection is closed or nil
 func (c *controlConn) query(statement string, values ...interface{}) (iter *Iter) {
-	span ,ctx :=opentracing.StartSpanFromContext(context.Background(),"controlConn.query")
+	span, ctx := opentracing.StartSpanFromContext(context.Background(), "controlConn.query")
 	defer span.Finish()
 	span.LogFields(traceLog.String("statement", statement))
 	q := c.session.Query(statement, values...).Consistency(One).RoutingKey([]byte{}).Trace(nil)
