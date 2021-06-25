@@ -64,6 +64,11 @@ func createControlConn(logger log.Logger, session *Session) *controlConn {
 }
 
 func (c *controlConn) heartBeat() {
+	if 1 == 1 {
+		level.Debug(c.logger).Log("msg", "controlConn disable heartBeat")
+		return
+	}
+
 	if !atomic.CompareAndSwapInt32(&c.started, 0, 1) {
 		return
 	}

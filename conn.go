@@ -557,7 +557,7 @@ func (p *protocolError) Error() string {
 
 func (c *Conn) heartBeat(ctx context.Context) {
 	if 1 == 1 {
-		level.Debug(c.logger).Log("msg", "disable heartBeat")
+		level.Debug(c.logger).Log("msg", "Conn disable heartBeat")
 		return
 	}
 
