@@ -81,8 +81,8 @@ func (c *controlConn) heartBeat() {
 		case <-timer.C:
 		}
 
-		span, _ := opentracing.StartSpanFromContext(context.Background(), "controlConn.heartBeat")
-		resp, err := c.writeFrame(&writeOptionsFrame{})
+		span, ctx := opentracing.StartSpanFromContext(context.Background(), "controlConn.heartBeat")
+		resp, err := c.writeFrame(ctx, &writeOptionsFrame{})
 		span.Finish()
 		if err != nil {
 			goto reconn
@@ -416,13 +416,13 @@ func (c *controlConn) getConn() *connHost {
 	return c.conn.Load().(*connHost)
 }
 
-func (c *controlConn) writeFrame(w frameWriter) (frame, error) {
+func (c *controlConn) writeFrame(ctx context.Context, w frameWriter) (frame, error) {
 	ch := c.getConn()
 	if ch == nil {
 		return nil, errNoControl
 	}
 
-	framer, err := ch.conn.exec(context.Background(), w, nil)
+	framer, err := ch.conn.exec(ctx, w, nil)
 	if err != nil {
 		return nil, err
 	}

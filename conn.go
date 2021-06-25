@@ -556,6 +556,11 @@ func (p *protocolError) Error() string {
 }
 
 func (c *Conn) heartBeat(ctx context.Context) {
+	if 1 == 1 {
+		level.Debug(c.logger).Log("msg", "disable heartBeat")
+		return
+	}
+
 	sleepTime := 1 * time.Second
 	timer := time.NewTimer(sleepTime)
 	defer timer.Stop()
@@ -578,9 +583,9 @@ func (c *Conn) heartBeat(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		span, _ := opentracing.StartSpanFromContext(context.Background(), "Conn.heartBeat")
+		span, ctx := opentracing.StartSpanFromContext(context.Background(), "Conn.heartBeat")
 		var framer *framer
-		framer, err = c.exec(context.Background(), &writeOptionsFrame{}, nil)
+		framer, err = c.exec(ctx, &writeOptionsFrame{}, nil)
 		span.Finish()
 		if err != nil {
 			level.Debug(c.logger).Log("msg", "error execing heartbeat", "error", err)
